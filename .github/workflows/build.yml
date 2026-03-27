@@ -1,4 +1,4 @@
-name: OnePlus13 6.6.89 · ResUK+BBG+ZeroTol+SUS-FS (最终兼容版)
+name: OnePlus13 6.6 · ResUK+BBG+ZeroTol+SUS-FS (源码版本名)
 
 on:
   workflow_dispatch:
@@ -16,13 +16,11 @@ jobs:
         run: |
           git clone --depth=1 https://github.com/brokestar233/android_kernel_common_oneplus_sm8750 kernel
 
-      - name: 设置内核版本与构建信息
-        run: |
-          cd kernel
-          echo "6.6.89-android15-8-g29d86c5fc9dd-a bogki428889875-4k" > .version
-          echo "" > .scmversion
-          echo "6.6.89" > .kernelrelease
-          echo "# SMP PREEMPT Tue Jul 1 19:48:18 UTC 2025" > .buildtime
+      # 不手动修改版本号，使用源码自带的内核名称
+      # - name: 设置内核版本信息
+      #   run: |
+      #     cd kernel
+      #     echo "xxx" > .version
 
       - name: 应用 SUS-FS
         run: |
@@ -64,10 +62,10 @@ jobs:
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git AK3
           cp kernel/out/arch/arm64/boot/Image.gz AK3/
           cd AK3
-          zip -r9 OP13_6.6.89_Full_Kernel.zip *
+          zip -r9 OP13_Source_Version_Kernel.zip *
 
       - name: 上传编译产物
         uses: actions/upload-artifact@v4
         with:
-          name: OP13_6.6.89_Full_Kernel
-          path: AK3/OP13_6.6.89_Full_Kernel.zip
+          name: OP13_Source_Version_Kernel
+          path: AK3/OP13_Source_Version_Kernel.zip
