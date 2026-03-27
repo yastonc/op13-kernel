@@ -1,4 +1,4 @@
-name: OnePlus13 6.6.89 · ResUK+BBG+ZeroTol+SUS-FS (兼容版)
+name: OnePlus13 6.6.89 · ResUK+BBG+ZeroTol+SUS-FS (最终兼容版)
 
 on:
   workflow_dispatch:
@@ -7,17 +7,16 @@ jobs:
   build:
     runs-on: ubuntu-22.04
     steps:
-      - name: 安装依赖
+      - name: 安装编译依赖
         run: |
           sudo apt update
           sudo apt install -y git build-essential clang lld llvm libssl-dev libelf-dev flex bison bc zip curl python3 python3-pip
 
-      - name: 克隆你指定的内核源码（去掉 -b main）
+      - name: 克隆指定内核源码
         run: |
           git clone --depth=1 https://github.com/brokestar233/android_kernel_common_oneplus_sm8750 kernel
 
-      # 严格匹配你图中的 Uname 和构建时间
-      - name: 设置内核版本信息
+      - name: 设置内核版本与构建信息
         run: |
           cd kernel
           echo "6.6.89-android15-8-g29d86c5fc9dd-a bogki428889875-4k" > .version
@@ -25,35 +24,30 @@ jobs:
           echo "6.6.89" > .kernelrelease
           echo "# SMP PREEMPT Tue Jul 1 19:48:18 UTC 2025" > .buildtime
 
-      # 1. 先打 SUS-FS
       - name: 应用 SUS-FS
         run: |
           cd kernel
           git clone --depth=1 https://github.com/SUS-Space/SUS-FS.git SUS-FS
           python3 SUS-FS/apply.py
 
-      # 2. 再打 ZeroTolerance
       - name: 应用 ZeroTolerance
         run: |
           cd kernel
           git clone --depth=1 https://github.com/Imprvdteam/ZeroTolerance.git ZeroTolerance
           python3 ZeroTolerance/apply.py
 
-      # 3. 再打 BBG
       - name: 应用 BBG
         run: |
           cd kernel
           git clone --depth=1 https://github.com/imshine/BBG.git BBG
           python3 BBG/apply.py
 
-      # 4. 最后打 ResurrectionSU
       - name: 应用 ResurrectionSU
         run: |
           cd kernel
           git clone --depth=1 https://github.com/viragsairaj/ResurrectionSU.git ResSU
           python3 ResSU/apply_patch.py
 
-      # 编译内核
       - name: 编译内核
         run: |
           cd kernel
@@ -65,15 +59,13 @@ jobs:
           make vendor/lahaina-qgki_defconfig
           make -j$(nproc)
 
-      # 打包 AnyKernel3
-      - name: 打包刷入包
+      - name: 打包 AnyKernel3
         run: |
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git AK3
           cp kernel/out/arch/arm64/boot/Image.gz AK3/
           cd AK3
           zip -r9 OP13_6.6.89_Full_Kernel.zip *
 
-      # 上传成品
       - name: 上传编译产物
         uses: actions/upload-artifact@v4
         with:
