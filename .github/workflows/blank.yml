@@ -112,26 +112,48 @@ jobs:
         run: rm -rf kernel_workspace && mkdir kernel_workspace
 
       - name: Clone kernel source
-        run: cd kernel_workspace && git clone https://github.com/yastonc/android_kernel_common_oneplus_sm8750.git -b v14 common
+        run: |
+          cd kernel_workspace
+          git clone https://github.com/yastonc/android_kernel_common_oneplus_sm8750.git -b v14 common
 
       - name: Clone Clang18
-        run: cd kernel_workspace && mkdir -p clang18 && aria2c -s16 -x16 -k1M https://github.com/cctv18/oneplus_sm8650_toolchain/releases/download/LLVM-Clang18-r510928/clang-r510928.zip -o clang.zip && unzip -q clang.zip -d clang18 && rm -f clang.zip
+        run: |
+          cd kernel_workspace
+          mkdir -p clang18
+          aria2c -s16 -x16 -k1M https://github.com/cctv18/oneplus_sm8650_toolchain/releases/download/LLVM-Clang18-r510928/clang-r510928.zip -o clang.zip
+          unzip -q clang.zip -d clang18
+          rm -f clang.zip
 
       - name: Clone build tools
-        run: cd kernel_workspace && aria2c -s16 -x16 -k1M https://github.com/cctv18/oneplus_sm8650_toolchain/releases/download/LLVM-Clang18-r510928/build-tools.zip -o build-tools.zip && unzip -q build-tools.zip && rm -f build-tools.zip
+        run: |
+          cd kernel_workspace
+          aria2c -s16 -x16 -k1M https://github.com/cctv18/oneplus_sm8650_toolchain/releases/download/LLVM-Clang18-r510928/build-tools.zip -o build-tools.zip
+          unzip -q build-tools.zip
+          rm -f build-tools.zip
 
       - name: Clean ABI & dirty
-        run: cd kernel_workspace && rm -f common/android/abi_gki_protected_exports_* && for f in common/scripts/setlocalversion; do sed -i 's/ -dirty//g' $f; sed -i '$i res=$(echo "$res" | sed '\''s/-dirty//g'\'')' $f; done
+        run: |
+          cd kernel_workspace
+          rm -f common/android/abi_gki_protected_exports_*
+          for f in common/scripts/setlocalversion; do
+            sed -i 's/ -dirty//g' $f
+            sed -i '$i res=$(echo "$res" | sed '\''s/-dirty//g'\'')' $f
+          done
 
       - name: Set build time
-        run: cd kernel_workspace/common && mkdir -p include/generated && echo -e "#define LINUX_COMPILE_TIME \"13:46:09\"\n#define LINUX_COMPILE_DATE \"Jul 11 2025\"\n#define LINUX_COMPILE_HOST \"localhost\"" > include/generated/compile.h
+        run: |
+          cd kernel_workspace/common
+          mkdir -p include/generated
+          echo -e "#define LINUX_COMPILE_TIME \"13:46:09\"\n#define LINUX_COMPILE_DATE \"Jul 11 2025\"\n#define LINUX_COMPILE_HOST \"localhost\"" > include/generated/compile.h
 
       - name: Config ccache
         run: |
           CCACHE_DIR="$HOME/.ccache_${{ env.KERNEL_VERSION }}.${{ env.SUB_VERSION }}"
           echo "CCACHE_DIR=$CCACHE_DIR" >> $GITHUB_ENV
           echo "CCACHE_MAXSIZE=3G" >> $GITHUB_ENV
-          mkdir -p "$CCACHE_DIR" && ccache -M 3G && ccache -o compression=true
+          mkdir -p "$CCACHE_DIR"
+          ccache -M 3G
+          ccache -o compression=true
 
       - name: Restore ccache
         uses: actions/cache@v5
@@ -148,29 +170,68 @@ jobs:
         run: |
           cd kernel_workspace/common
           if [[ ${{ github.event.inputs.ksu_type }} == "resukisu" ]]; then
-            git clone https://github.com/Resukisu/Resukisu.git --depth=1 ../resukisu && cd ../resukisu && if [ -f patch.sh ]; then bash patch.sh apply ../common; elif [ -f scripts/patch.sh ]; then bash scripts/patch.sh apply ../common; fi && echo "ksuver=ReSukiSU" >> $GITHUB_OUTPUT
+            git clone https://github.com/Resukisu/Resukisu.git --depth=1 ../resukisu
+            cd ../resukisu
+            if [ -f patch.sh ]; then bash patch.sh apply ../common; elif [ -f scripts/patch.sh ]; then bash scripts/patch.sh apply ../common; fi
+            echo "ksuver=ReSukiSU" >> $GITHUB_OUTPUT
           elif [[ ${{ github.event.inputs.ksu_type }} == "sukisu" ]]; then
-            curl -LSs https://raw.githubusercontent.com/ShirkNeko/SukiSU-Ultra/main/kernel/setup.sh | bash -s builtin && echo "ksuver=SukiSU-Ultra" >> $GITHUB_OUTPUT
+            curl -LSs https://raw.githubusercontent.com/ShirkNeko/SukiSU-Ultra/main/kernel/setup.sh | bash -s builtin
+            echo "ksuver=SukiSU-Ultra" >> $GITHUB_OUTPUT
           elif [[ ${{ github.event.inputs.ksu_type }} == "ksu" ]]; then
-            curl -LSs https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh | bash -s main && echo "ksuver=KernelSU" >> $GITHUB_OUTPUT
+            curl -LSs https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh | bash -s main
+            echo "ksuver=KernelSU" >> $GITHUB_OUTPUT
           else
             echo "ksuver=None" >> $GITHUB_OUTPUT
           fi
 
       - name: Integrate SUS-FS
         if: ${{ github.event.inputs.susfs_enable == 'true' }}
-        run: cd kernel_workspace && git clone https://github.com/sakurai-yt/susfs.git --depth=1 susfs && cd susfs && for i in *.patch; do git apply --quiet ../common/$i || true; done
+        run: |
+          cd kernel_workspace
+          git clone https://github.com/sakurai-yt/susfs.git --depth=1 susfs
+          cd susfs
+          for i in *.patch; do
+            git apply --quiet ../common/$i || true
+          done
 
       - name: Integrate BBG
         if: ${{ github.event.inputs.baseband_guard == 'true' }}
-        run: cd kernel_workspace && git clone https://github.com/BoringBoredGroup/BBG-Kernel-Patches.git --depth=1 bbg && cd bbg && for i in *.patch; do git apply --quiet ../common/$i || true; done
+        run: |
+          cd kernel_workspace
+          git clone https://github.com/BoringBoredGroup/BBG-Kernel-Patches.git --depth=1 bbg
+          cd bbg
+          for i in *.patch; do
+            git apply --quiet ../common/$i || true
+          done
 
+      # 🔹 修复：补全缺失脚本 + 改用 oneplus 专属 defconfig
       - name: Compile kernel
-        run: cd kernel_workspace/common && export ARCH=arm64 && export CC=../clang18/bin/clang && export CROSS_COMPILE=aarch64-linux-gnu- && export LD=../clang18/bin/ld.lld && export PATH=../clang18/bin:$PATH && make gki_defconfig && make -j$(nproc)
+        run: |
+          cd kernel_workspace/common
+          curl -LSs https://raw.githubusercontent.com/torvalds/linux/master/scripts/kconfig/check_file.sh -o scripts/kconfig/check_file.sh
+          chmod +x scripts/kconfig/check_file.sh
+          
+          export ARCH=arm64
+          export CC=../clang18/bin/clang
+          export CROSS_COMPILE=aarch64-linux-gnu-
+          export LD=../clang18/bin/ld.lld
+          export PATH=../clang18/bin:$PATH
+          
+          make oneplus_sm8750_defconfig || make gki_defconfig
+          make -j$(nproc)
 
       - name: Pack AnyKernel3
         id: create_zip
-        run: cd kernel_workspace && git clone https://github.com/osm0sis/AnyKernel3.git --depth=1 ak3 && cp common/arch/arm64/boot/Image.gz ak3/ 2>/dev/null && cp common/arch/arm64/boot/Image ak3/ 2>/dev/null && cd ak3 && ZIP=Kernel_yastonc_v14_${{ steps.ksu_version.outputs.ksuver }}.zip && zip -r9 $ZIP * && echo "ak3name=$ZIP" >> $GITHUB_OUTPUT && mv $ZIP ../../
+        run: |
+          cd kernel_workspace
+          git clone https://github.com/osm0sis/AnyKernel3.git --depth=1 ak3
+          cp common/arch/arm64/boot/Image.gz ak3/ 2>/dev/null
+          cp common/arch/arm64/boot/Image ak3/ 2>/dev/null
+          cd ak3
+          ZIP=Kernel_yastonc_v14_${{ steps.ksu_version.outputs.ksuver }}.zip
+          zip -r9 $ZIP *
+          echo "ak3name=$ZIP" >> $GITHUB_OUTPUT
+          mv $ZIP ../../
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
