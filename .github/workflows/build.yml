@@ -1,4 +1,4 @@
-name: OnePlus13 6.6 · ResUK+BBG+ZeroTol+SUS-FS (源码版本名)
+name: Build OP SM8750 • 原生名称+Resukisu+BBG+零宽容+SUSFS
 
 on:
   workflow_dispatch:
@@ -7,65 +7,72 @@ jobs:
   build:
     runs-on: ubuntu-22.04
     steps:
-      - name: 安装编译依赖
+      - name: Checkout kernel source
+        uses: actions/checkout@v4
+        with:
+          repository: brokestar233/android_kernel_common_oneplus_sm8750
+          ref: main
+          fetch-depth: 1
+
+      - name: Install dependencies
         run: |
           sudo apt update
-          sudo apt install -y git build-essential clang lld llvm libssl-dev libelf-dev flex bison bc zip curl python3 python3-pip
+          sudo apt install -y bc bison flex build-essential libssl-dev libelf-dev \
+            git zip curl lld llvm gcc-aarch64-linux-gnu python3 python2
 
-      - name: 克隆指定内核源码
+      - name: Clone Clang toolchain
         run: |
-          git clone --depth=1 https://github.com/brokestar233/android_kernel_common_oneplus_sm8750 kernel
+          git clone https://github.com/ZyCromerZ/Clang --depth=1 clang
+          echo "$GITHUB_WORKSPACE/clang/bin" >> $GITHUB_PATH
 
-      # 不手动修改版本号，使用源码自带的内核名称
-      # - name: 设置内核版本信息
-      #   run: |
-      #     cd kernel
-      #     echo "xxx" > .version
-
-      - name: 应用 SUS-FS
+      - name: Apply Resukisu
         run: |
-          cd kernel
-          git clone --depth=1 https://github.com/SUS-Space/SUS-FS.git SUS-FS
-          python3 SUS-FS/apply.py
+          git clone https://github.com/Resukisu/Resukisu --depth=1 resukisu
+          cd resukisu
+          bash patch.sh apply ..
 
-      - name: 应用 ZeroTolerance
+      - name: Apply BBG Tweaks
         run: |
-          cd kernel
-          git clone --depth=1 https://github.com/Imprvdteam/ZeroTolerance.git ZeroTolerance
-          python3 ZeroTolerance/apply.py
+          git clone https://github.com/BoringBoredGroup/BBG-Kernel-Patches --depth=1 bbg
+          cd bbg
+          for i in *.patch; do git apply $i || true; done
 
-      - name: 应用 BBG
+      - name: Apply Zero Tolerance (零宽容)
         run: |
-          cd kernel
-          git clone --depth=1 https://github.com/imshine/BBG.git BBG
-          python3 BBG/apply.py
+          git clone https://github.com/byxiaorun/NoFuzz.git --depth=1 nofuzz
+          cd nofuzz
+          for i in *.patch; do git apply $i || true; done
 
-      - name: 应用 ResurrectionSU
+      - name: Apply SUS-FS
         run: |
-          cd kernel
-          git clone --depth=1 https://github.com/viragsairaj/ResurrectionSU.git ResSU
-          python3 ResSU/apply_patch.py
+          git clone https://github.com/sakurai-yt/susfs.git --depth=1 susfs
+          cd susfs
+          for i in *.patch; do git apply $i || true; done
 
-      - name: 编译内核
+      - name: Build kernel (原生名称+时间)
         run: |
-          cd kernel
           export ARCH=arm64
-          export LLVM=1
           export CC=clang
           export CROSS_COMPILE=aarch64-linux-gnu-
-          export LOCALVERSION=""
-          make vendor/lahaina-qgki_defconfig
+          export LD=ld.lld
+          export AR=llvm-ar
+          export NM=llvm-nm
+          export OBJCOPY=llvm-objcopy
+          export OBJDUMP=llvm-objdump
+          export STRIP=llvm-strip
+
+          make oneplus_sm8750_defconfig
           make -j$(nproc)
 
-      - name: 打包 AnyKernel3
+      - name: Pack with AnyKernel3
         run: |
-          git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git AK3
-          cp kernel/out/arch/arm64/boot/Image.gz AK3/
-          cd AK3
-          zip -r9 OP13_Source_Version_Kernel.zip *
+          git clone https://github.com/osm0sis/AnyKernel3 --depth=1 ak3
+          cp arch/arm64/boot/Image.gz ak3/
+          cd ak3
+          zip -r9 Kernel_SM8750_StockName_Resukisu_BBG_Nofuzz_SUSFS.zip *
 
-      - name: 上传编译产物
+      - name: Upload kernel
         uses: actions/upload-artifact@v4
         with:
-          name: OP13_Source_Version_Kernel
-          path: AK3/OP13_Source_Version_Kernel.zip
+          name: Kernel_SM8750_StockName_Resukisu_BBG_Nofuzz_SUSFS
+          path: ak3/*.zip
