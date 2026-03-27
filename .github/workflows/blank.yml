@@ -1,4 +1,4 @@
-name: 加速版构建 6.6欧加真OKI内核
+name: 加速版构建 6.6.89 欧加真OKI内核
 
 env:
   TZ: Asia/Shanghai
@@ -144,7 +144,6 @@ jobs:
             sed -i '$i res=$(echo "$res" | sed '\''s/-dirty//g'\'')' "$f"
           done
 
-      # ====================== 固定内核构建时间（源码时间） ======================
       - name: 设置内核源码构建时间
         run: |
           cd kernel_workspace/common
@@ -155,11 +154,13 @@ jobs:
           #define LINUX_COMPILE_HOST "localhost"
           EOF
 
+      # 🔹 修复：先定义变量再写入环境，避免空路径
       - name: 配置 ccache
         run: |
-          echo "CCACHE_DIR=$HOME/.ccache_${{ env.KERNEL_VERSION }}.${{ env.SUB_VERSION }}" >> $GITHUB_ENV
+          CCACHE_DIR="$HOME/.ccache_${{ env.KERNEL_VERSION }}.${{ env.SUB_VERSION }}"
+          echo "CCACHE_DIR=$CCACHE_DIR" >> $GITHUB_ENV
           echo "CCACHE_MAXSIZE=3G" >> $GITHUB_ENV
-          mkdir -p "${{ env.CCACHE_DIR }}"
+          mkdir -p "$CCACHE_DIR"
           ccache -M 3G
           ccache -o compression=true
 
