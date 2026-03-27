@@ -1,0 +1,254 @@
+name: 加速版构建 6.6.89 欧加真OKI内核
+
+env:
+  TZ: Asia/Shanghai
+  ANDROID_VERSION: 'android15'
+  KERNEL_VERSION: '6.6'
+  SUB_VERSION: '89'
+  KERNEL_NAME: 'android15-8-g29d86c5fc9dd-abogki428889875-4k'
+  CCACHE_KEY: ccache-neov4-6.6.89
+
+on:
+  workflow_dispatch:
+    inputs:
+      ksu_type:
+        description: 'KernelSU分支(ReSukiSU/SukiSU Ultra/KernelSU Next/KSU(原版)/无内置KSU,默认ReSukiSU)'
+        required: true
+        type: choice
+        default: 'resukisu'
+        options:
+          - 'resukisu'
+          - 'sukisu'
+          - 'ksunext'
+          - 'ksu'
+          - 'none'
+      susfs_enable:
+        description: '是否开启susfs(增强隐藏)'
+        required: true
+        type: boolean
+        default: 'true'
+      kpm_enable:
+        description: '是否开启kpm'
+        required: true
+        type: choice
+        default: 'false'
+        options:
+          - 'false'
+          - 'builtin'
+          - 'kpn'
+      lz4_enable:
+        description: 'lz4 1.10.0+zstd 1.5.7'
+        required: true
+        type: boolean
+        default: 'true'
+      lz4kd_enable:
+        description: 'LZ4KD'
+        required: true
+        type: boolean
+        default: 'false'
+      bbr_enable:
+        description: 'bbr算法'
+        required: true
+        type: choice
+        default: 'false'
+        options:
+          - 'false'
+          - 'true'
+          - 'default'
+      better_net:
+        description: '网络功能拓展'
+        required: true
+        type: boolean
+        default: 'false'
+      adios_enable:
+        description: 'ADIOS IO调度'
+        required: true
+        type: boolean
+        default: 'true'
+      rekernel_enable:
+        description: 'Re-Kernel'
+        required: true
+        type: boolean
+        default: 'false'
+      baseband_guard:
+        description: '基带保护BBG'
+        required: true
+        type: boolean
+        default: 'true'
+      ccache_update:
+        description: '更新ccache'
+        required: true
+        type: boolean
+        default: 'false'
+      ccache_debug:
+        description: 'ccache调试日志'
+        required: true
+        type: boolean
+        default: 'false'
+      kernel_suffix:
+        description: '内核后缀'
+        required: false
+        type: string
+        default: ''
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      ksuver: ${{ steps.ksu_version.outputs.ksuver }}
+      ak3name: ${{ steps.create_zip.outputs.ak3name }}
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: 安装环境依赖
+        run: |
+          sudo apt update
+          sudo apt install -y bc bison flex build-essential libssl-dev libelf-dev git zip curl lld llvm python3 python-is-python3 ccache aria2 zstd
+          sudo ln -sf python3 /usr/bin/python
+
+      - name: 初始化工作目录
+        run: |
+          rm -rf kernel_workspace
+          mkdir kernel_workspace
+          cd kernel_workspace
+
+      - name: 拉取 yastonc v14 内核源码
+        run: |
+          cd kernel_workspace
+          git clone https://github.com/yastonc/android_kernel_common_oneplus_sm8750.git -b v14 common
+
+      - name: 拉取 Clang 工具链
+        run: |
+          cd kernel_workspace
+          mkdir -p clang18
+          aria2c -s16 -x16 -k1M https://github.com/cctv18/oneplus_sm8650_toolchain/releases/download/LLVM-Clang18-r510928/clang-r510928.zip -o clang.zip
+          unzip -q clang.zip -d clang18
+          rm -rf clang.zip
+
+      - name: 拉取构建工具
+        run: |
+          cd kernel_workspace
+          aria2c -s16 -x16 -k1M https://github.com/cctv18/oneplus_sm8650_toolchain/releases/download/LLVM-Clang18-r510928/build-tools.zip -o build-tools.zip
+          unzip -q build-tools.zip
+          rm -rf build-tools.zip
+
+      - name: 去除 ABI 保护 & dirty 后缀
+        run: |
+          cd kernel_workspace
+          rm common/android/abi_gki_protected_exports_* 2>/dev/null || true
+          for f in common/scripts/setlocalversion; do
+            sed -i 's/ -dirty//g' "$f"
+            sed -i '$i res=$(echo "$res" | sed '\''s/-dirty//g'\'')' "$f"
+          done
+
+      # ====================== 固定内核构建时间（源码时间） ======================
+      - name: 设置内核源码构建时间
+        run: |
+          cd kernel_workspace/common
+          mkdir -p include/generated
+          cat > include/generated/compile.h << EOF
+          #define LINUX_COMPILE_TIME "13:46:09"
+          #define LINUX_COMPILE_DATE "Jul 11 2025"
+          #define LINUX_COMPILE_HOST "localhost"
+          EOF
+
+      - name: 配置 ccache
+        run: |
+          echo "CCACHE_DIR=$HOME/.ccache_${{ env.KERNEL_VERSION }}.${{ env.SUB_VERSION }}" >> $GITHUB_ENV
+          echo "CCACHE_MAXSIZE=3G" >> $GITHUB_ENV
+          mkdir -p "${{ env.CCACHE_DIR }}"
+          ccache -M 3G
+          ccache -o compression=true
+
+      - name: 载入 ccache 缓存
+        uses: actions/cache@v5
+        id: ccache-restore
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ${{ env.CCACHE_KEY }}-${{ runner.os }}-${{ github.ref_name }}
+          restore-keys: |
+            ${{ env.CCACHE_KEY }}-${{ runner.os }}-
+            ${{ env.CCACHE_KEY }}-
+
+      - name: 集成 KernelSU / ReSukiSU
+        id: ksu_version
+        run: |
+          cd kernel_workspace/common
+          
+          if [[ ${{ github.event.inputs.ksu_type }} == "resukisu" ]]; then
+            git clone https://github.com/Resukisu/Resukisu --depth=1 ../resukisu
+            cd ../resukisu
+            if [ -f patch.sh ]; then
+              bash patch.sh apply ../common
+            elif [ -f scripts/patch.sh ]; then
+              bash scripts/patch.sh apply ../common
+            fi
+            echo "ksuver=ReSukiSU" >> $GITHUB_OUTPUT
+          
+          elif [[ ${{ github.event.inputs.ksu_type }} == "sukisu" ]]; then
+            curl -LSs https://raw.githubusercontent.com/ShirkNeko/SukiSU-Ultra/main/kernel/setup.sh | bash -s builtin
+            echo "ksuver=SukiSU-Ultra" >> $GITHUB_OUTPUT
+          
+          elif [[ ${{ github.event.inputs.ksu_type }} == "ksu" ]]; then
+            curl -LSs https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh | bash -s main
+            echo "ksuver=KernelSU" >> $GITHUB_OUTPUT
+          
+          else
+            echo "ksuver=None" >> $GITHUB_OUTPUT
+          fi
+
+      - name: 集成 SUS-FS
+        if: ${{ github.event.inputs.susfs_enable == 'true' }}
+        run: |
+          cd kernel_workspace
+          git clone https://github.com/sakurai-yt/susfs --depth=1 susfs
+          cd susfs
+          for i in *.patch; do
+            git apply --quiet ../common/$i || true
+          done
+
+      - name: 集成 BBG 基带守护
+        if: ${{ github.event.inputs.baseband_guard == 'true' }}
+        run: |
+          cd kernel_workspace
+          git clone https://github.com/BoringBoredGroup/BBG-Kernel-Patches --depth=1 bbg
+          cd bbg
+          for i in *.patch; do
+            git apply --quiet ../common/$i || true
+          done
+
+      - name: 编译内核
+        run: |
+          cd kernel_workspace/common
+          export ARCH=arm64
+          export CC=../clang18/bin/clang
+          export CROSS_COMPILE=aarch64-linux-gnu-
+          export LD=../clang18/bin/ld.lld
+          export PATH=../clang18/bin:$PATH
+          
+          make gki_defconfig
+          make -j$(nproc)
+
+      - name: 打包 AnyKernel3
+        id: create_zip
+        run: |
+          cd kernel_workspace
+          git clone https://github.com/osm0sis/AnyKernel3.git --depth=1 ak3
+          cp common/arch/arm64/boot/Image.gz ak3/ 2>/dev/null
+          cp common/arch/arm64/boot/Image ak3/ 2>/dev/null
+          
+          cd ak3
+          ZIP_NAME=Kernel_yastonc_v14_${{ steps.ksu_version.outputs.ksuver }}.zip
+          zip -r9 "$ZIP_NAME" *
+          
+          echo "ak3name=$ZIP_NAME" >> $GITHUB_OUTPUT
+          mv "$ZIP_NAME" ../../
+
+      - name: 上传内核
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.create_zip.outputs.ak3name }}
+          path: ${{ github.workspace }}/${{ steps.create_zip.outputs.ak3name }}
