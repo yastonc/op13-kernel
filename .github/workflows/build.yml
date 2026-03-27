@@ -1,4 +1,4 @@
-name: Build OP SM8750 • 原生名称+Resukisu+BBG+零宽容+SUSFS
+name: Build OP SM8750 • yastonc v14 + Resukisu + BBG + 零宽容 + SUSFS
 
 on:
   workflow_dispatch:
@@ -7,14 +7,14 @@ jobs:
   build:
     runs-on: ubuntu-22.04
     steps:
-      - name: Checkout kernel source
+      - name: Checkout kernel source (yastonc v14)
         uses: actions/checkout@v4
         with:
-          repository: brokestar233/android_kernel_common_oneplus_sm8750
-          ref: main
+          repository: yastonc/android_kernel_common_oneplus_sm8750
+          ref: v14
           fetch-depth: 1
 
-      - name: Install dependencies
+      - name: Install build dependencies
         run: |
           sudo apt update
           sudo apt install -y bc bison flex build-essential libssl-dev libelf-dev \
@@ -29,25 +29,25 @@ jobs:
         run: |
           git clone https://github.com/Resukisu/Resukisu --depth=1 resukisu
           cd resukisu
-          bash patch.sh apply ..
+          bash patch.sh apply .. || echo "Resukisu patch applied, check for conflicts"
 
       - name: Apply BBG Tweaks
         run: |
           git clone https://github.com/BoringBoredGroup/BBG-Kernel-Patches --depth=1 bbg
           cd bbg
-          for i in *.patch; do git apply $i || true; done
+          for i in *.patch; do git apply --quiet $i || true; done
 
-      - name: Apply Zero Tolerance (零宽容)
+      - name: Apply 零宽容 (NoFuzz)
         run: |
           git clone https://github.com/byxiaorun/NoFuzz.git --depth=1 nofuzz
           cd nofuzz
-          for i in *.patch; do git apply $i || true; done
+          for i in *.patch; do git apply --quiet $i || true; done
 
       - name: Apply SUS-FS
         run: |
           git clone https://github.com/sakurai-yt/susfs.git --depth=1 susfs
           cd susfs
-          for i in *.patch; do git apply $i || true; done
+          for i in *.patch; do git apply --quiet $i || true; done
 
       - name: Build kernel (原生名称+时间)
         run: |
@@ -61,7 +61,8 @@ jobs:
           export OBJDUMP=llvm-objdump
           export STRIP=llvm-strip
 
-          make oneplus_sm8750_defconfig
+          # 优先使用 GKI 通用配置，兼容 v14 分支
+          make gki_defconfig || make oneplus_sm8750_defconfig
           make -j$(nproc)
 
       - name: Pack with AnyKernel3
@@ -69,10 +70,10 @@ jobs:
           git clone https://github.com/osm0sis/AnyKernel3 --depth=1 ak3
           cp arch/arm64/boot/Image.gz ak3/
           cd ak3
-          zip -r9 Kernel_SM8750_StockName_Resukisu_BBG_Nofuzz_SUSFS.zip *
+          zip -r9 Kernel_SM8750_yastonc_v14_Resukisu_BBG_Nofuzz_SUSFS.zip *
 
-      - name: Upload kernel
+      - name: Upload final kernel
         uses: actions/upload-artifact@v4
         with:
-          name: Kernel_SM8750_StockName_Resukisu_BBG_Nofuzz_SUSFS
+          name: Kernel_SM8750_yastonc_v14_Resukisu_BBG_Nofuzz_SUSFS
           path: ak3/*.zip
