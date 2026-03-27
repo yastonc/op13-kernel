@@ -59,7 +59,7 @@ jobs:
       - name: 安装依赖环境
         run: |
           sudo apt update -y
-          sudo apt install -y git ccache clang llvm lld aarch64-linux-gnu-gcc jq gh unzip zip build-essential
+          sudo apt install -y git ccache clang llvm lld gcc-aarch64-linux-gnu jq gh unzip zip build-essential
           ccache --max-size=10G
       
       - name: 克隆指定内核源码
