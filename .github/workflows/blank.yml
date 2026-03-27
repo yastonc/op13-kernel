@@ -1,226 +1,191 @@
-name: SukiSU Ultra Kernel Build
+name: Build_oneplus_sm8750
+
 on:
   workflow_dispatch:
     inputs:
-      FAST_BUILD:
-        description: '快速编译模式'
+      ksu_type:
+        description: "📝请选择要集成的KSU："
         required: true
-        default: 'true'
-      KPM:
-        description: '是否开启KPM补丁'
-        required: true
-        default: 'KPN'
         type: choice
         options:
-          - KPM
-          - KPN
-      SUSFS_CI:
-        description: 'SUSFS模块来源'
+          - 'ReSukiSU'
+          - 'SukiSU-Ultra'
+        default: 'ReSukiSU'
+        
+      device_name:
+        description: "📝请选择要编译的机型："
         required: true
-        default: 'Release'
         type: choice
         options:
-          - CI
-          - Release
-      SUSFS_META:
-        description: 'SUSFS META版本'
-        required: true
-        default: '1.5.2+'
-      LSM_BBG:
-        description: '开启BBG LSM'
-        required: true
-        default: 'false'
+          - 'oneplus_13'
+          - 'oneplus_ace5_pro'
+          - 'oneplus_ace_6'
+          - 'oneplus_13t'
+          - 'oneplus_pad_2_pro'
+          - 'realme_GT7pro'
+          - 'realme_GT7pro_Speed'
+          - 'realme_GT8'
+        default: 'oneplus_ace5_pro'
+
+      keep_original_settings:
+        description: "📝保持原内核名称及构建时间(不懂请保持默认)"
+        required: false
+        default: true
         type: boolean
-      SCHED_HMBIRD:
-        description: '开启HMBIRD调度'
-        required: true
-        default: 'false'
+
+      custom_kernel_suffix:
+        description: "✏️ 自定义内核名称- 仅在取消勾选'保持原设置'时有效"
+        required: false
+        default: ''
+      
+      custom_kernel_time:
+        description: "⏰ 自定义构建时间- 仅在取消勾选'保持原设置'时有效"
+        required: false
+        default: ''
+
+      enable_scx:
+        description: "添加完美风驰"
+        required: false
+        default: true
         type: boolean
-      ZRAM:
-        description: 'ZRAM模块配置'
-        required: true
-        default: '0'
-env:
-  KSUVER: '1.0'
-  KERNEL_VERSION: '5.15'
-  CPUD: 'arm64'
-  BUILD_METHOD: 'user'
-  ZRAM_ALGO: 'zstd'
-  ZRAM_SIZE: '8G'
-  TKERNEL_VERSION: 'SM8750'
+
+      enable_bbg:
+        description: "开启BBG基带守护"
+        required: false
+        default: true
+        type: boolean
 
 jobs:
   build:
+    name: Build_${{ github.event.inputs.device_name }}_${{ github.event.inputs.ksu_type }}
     runs-on: ubuntu-latest
+    env:
+      KSU_TYPE: ${{ github.event.inputs.ksu_type }}
+      DEVICES_NAME: ${{ github.event.inputs.device_name }}
+      KEEP_ORIGINAL_SETTINGS: ${{ github.event.inputs.keep_original_settings }}
+      CUSTOM_KERNEL_SUFFIX: ${{ github.event.inputs.custom_kernel_suffix }}
+      CUSTOM_KERNEL_TIME: ${{ github.event.inputs.custom_kernel_time }}
+      ENABLE_SCX: ${{ github.event.inputs.enable_scx }}
+      ENABLE_BBG: ${{ github.event.inputs.enable_bbg }}
     steps:
-      - name: Checkout CI配置
-        uses: actions/checkout@v4
-      
-      - name: 安装依赖环境
+      - uses: actions/checkout@v5
+
+      - name: ⚙️ 设置机型配置
+        run: |
+          case "${{ env.DEVICES_NAME }}" in
+            oneplus_ace5_pro)
+              echo "KERNEL_DEFCONFIG=oneplus_sm8750_b_defconfig" >> $GITHUB_ENV
+              ;;
+            oneplus_13)
+              echo "KERNEL_DEFCONFIG=oneplus_sm8750_defconfig" >> $GITHUB_ENV
+              ;;
+            oneplus_ace_6)
+              echo "KERNEL_DEFCONFIG=oneplus_ace6_defconfig" >> $GITHUB_ENV
+              ;;
+            oneplus_13t)
+              echo "KERNEL_DEFCONFIG=oneplus_13t_b_defconfig" >> $GITHUB_ENV
+              ;;
+            oneplus_pad_2_pro)
+              echo "KERNEL_DEFCONFIG=oneplus_pad2pro_b_defconfig" >> $GITHUB_ENV
+              ;;
+            realme_GT7pro|realme_GT7pro_Speed|realme_GT8)
+              echo "KERNEL_DEFCONFIG=oneplus_sm8750_b_defconfig" >> $GITHUB_ENV
+              ;;
+          esac
+
+          if [ "${{ env.KEEP_ORIGINAL_SETTINGS }}" = "true" ]; then
+            echo "DEFAULT_SUFFIX=-yastonc-v14" >> $GITHUB_ENV
+            echo "KERNEL_TIME=Fri Sep 19 06:13:40 UTC 2025" >> $GITHUB_ENV
+          else
+            echo "DEFAULT_SUFFIX=${{ env.CUSTOM_KERNEL_SUFFIX }}" >> $GITHUB_ENV
+            echo "KERNEL_TIME=${{ env.CUSTOM_KERNEL_TIME }}" >> $GITHUB_ENV
+          fi
+
+      - name: 🛠 安装依赖
         run: |
           sudo apt update -y
-          sudo apt install -y git ccache clang llvm lld gcc-aarch64-linux-gnu jq gh unzip zip build-essential
-          ccache --max-size=10G
-      
-      - name: 克隆指定内核源码
+          sudo apt install -y bc bison flex build-essential libssl-dev libelf-dev git zip curl lld llvm python3 python-is-python3 ccache aria2 zstd unzip
+
+      - name: 🧰 初始化工作区
         run: |
-          mkdir -p kernel_workspace
+          rm -rf kernel_workspace && mkdir kernel_workspace
           cd kernel_workspace
-          git clone https://github.com/yastonc/android_kernel_common_oneplus_sm8750.git kernel_platform --depth=1
-      
-      - name: 快速编译内核
-        if: ${{ github.event.inputs.FAST_BUILD == 'true' }}
+
+      - name: 📥 克隆 yastonc 内核源码
         run: |
-          cd kernel_workspace/kernel_platform
-          ROOT_REAL_PATH="$PWD"
-          FPMAP="-ffile-prefix-map=$ROOT_REAL_PATH=."
-          KCFLAGS="$FPMAP -no-canonical-prefixes -Wno-error -D__ANDROID_COMMON_KERNEL__"
-          
-          MAKE_ARGS=(
-            LLVM=1
-            ARCH=arm64
-            CROSS_COMPILE=aarch64-linux-gnu-
-            CC="ccache clang"
-            HOSTCC="ccache clang"
-            LD=ld.lld
-            HOSTLD=ld.lld
-            KCFLAGS="$KCFLAGS"
-          )
-          
-          if [[ "$USE_LLVM_IAS" == "true" ]]; then
-            MAKE_ARGS=(LLVM_IAS=1 "${MAKE_ARGS[@]}")
-          fi
-          
-          # 生成内核默认配置
-          make O=out "${MAKE_ARGS[@]}" gki_defconfig
-          
-          # 5.15内核设置ThinLTO
-          if [[ "$KERNEL_VERSION" == "5.15" ]]; then
-            echo ">> 设置 LTO = thin"
-            scripts/config --file out/.config -e LTO_CLANG
-            scripts/config --file out/.config -e LTO_CLANG_THIN
-            scripts/config --file out/.config -d LTO_CLANG_NONE
-            scripts/config --file out/.config -d LTO_CLANG_FULL
-          fi
-          
-          make O=out "${MAKE_ARGS[@]}" olddefconfig
-          make -j"$(nproc --all)" O=out "${MAKE_ARGS[@]}"
-          ccache -s
-      
-      - name: 打包AnyKernel3刷机包
+          cd kernel_workspace
+          git clone https://github.com/yastonc/android_kernel_common_oneplus_sm8750.git -b v14 common
+
+      - name: 📥 克隆 Clang18 工具链
         run: |
-          git clone https://github.com/Numbersf/AnyKernel3 --depth=1
-          rm -rf ./AnyKernel3/.git
-          mkdir -p kernel_workspace/kernel_platform/out/Final-Image-Find/
-          
-          # 查找内核Image文件（适配该内核路径）
-          image_path=""
-          if [ -d "./kernel_workspace/kernel_platform/common/out/" ]; then
-            image_path=$(find "./kernel_workspace/kernel_platform/common/out/" -name "Image" | head -n 1)
-          fi
-          
-          if [ -z "$image_path" ]; then
-            echo "❌ 未找到内核Image文件，编译失败" >&2
-            exit 1
-          fi
-          
-          echo "✅ 内核Image文件路径：$image_path"
-          cp "$image_path" ./AnyKernel3/Image
-          cp "$image_path" kernel_workspace/kernel_platform/out/Final-Image-Find/Image
-      
-      - name: 应用KPM内核补丁
-        if: ${{ github.event.inputs.KPM == 'KPM' }}
+          cd kernel_workspace
+          mkdir -p clang18
+          aria2c -s16 -x16 -k1M https://github.com/cctv18/oneplus_sm8650_toolchain/releases/download/LLVM-Clang18-r510928/clang-r510928.zip -o clang.zip
+          unzip -q clang.zip -d clang18 && rm -f clang.zip
+
+      - name: 🧹 清理 dirty & ABI
         run: |
-          PATCH_DIR="${GITHUB_WORKSPACE}/kernel_workspace/SukiSU_patch/kpm"
-          OUT_DIR="${GITHUB_WORKSPACE}/kernel_workspace/kernel_platform/out/Final-Image-Find"
-          cd "${OUT_DIR}"
-          cp "${PATCH_DIR}/patch_linux" .
-          chmod +x patch_linux
-          ./patch_linux
-          rm -f Image
-          mv oImage Image
-          cp Image "${GITHUB_WORKSPACE}/AnyKernel3/Image"
-      
-      - name: 从CI下载最新SUSFS模块
-        if: ${{ github.event.inputs.SUSFS_CI == 'CI' && github.event.inputs.SUSFS_META != '-1' }}
-        continue-on-error: true
+          cd kernel_workspace/common
+          rm -f android/abi_gki_protected_exports_* || true
+          for f in scripts/setlocalversion; do
+            sed -i 's/ -dirty//g' "$f"
+          done
+
+      - name: 🧩 集成 KSU
         run: |
-          LATEST_RUN_ID=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-            "https://api.github.com/repos/sidex15/susfs4ksu-module/actions/runs?status=success" | \
-            jq -r '.workflow_runs[] | select(.head_branch == "v1.5.2+") | .id' | head -n 1)
-          if [ -n "$LATEST_RUN_ID" ]; then
-            ARTIFACT_URL=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-              "https://api.github.com/repos/sidex15/susfs4ksu-module/actions/runs/$LATEST_RUN_ID/artifacts" | jq -r '.artifacts[0].archive_download_url')
-            if [ -n "$ARTIFACT_URL" ]; then
-              curl -L -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" -o ksu_module_susfs_1.5.2+_CI.zip "$ARTIFACT_URL"
-              cp ksu_module_susfs_1.5.2+_CI.zip ./AnyKernel3/
-            fi
-          fi
-      
-      - name: 从Release下载稳定版SUSFS模块
-        if: ${{ github.event.inputs.SUSFS_CI == 'Release' && github.event.inputs.SUSFS_META != '-1' }}
-        continue-on-error: true
-        run: |
-          wget -O ksu_module_susfs_1.5.2+_Release.zip https://github.com/sidex15/ksu_module_susfs/releases/latest/download/ksu_module_susfs_1.5.2+.zip
-          cp ksu_module_susfs_1.5.2+_Release.zip ./AnyKernel3/
-      
-      - name: 下载SukiSU-Ultra管理APK
-        continue-on-error: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          MANAGER_BRANCH="main"
-          MANAGER_ARTIFACT="SukiSU-Ultra-APK"
-          run_id=$(gh api "repos/SukiSU-Ultra/SukiSU-Ultra/actions/workflows/build-manager.yml/runs?branch=$MANAGER_BRANCH&status=success&per_page=1" --jq '.workflow_runs[0].id' || echo "")
-          if [[ -n "$run_id" ]]; then
-            artifact_url=$(gh api "repos/SukiSU-Ultra/SukiSU-Ultra/actions/runs/$run_id/artifacts" | jq -r ".artifacts[] | select(.name == \"$MANAGER_ARTIFACT\") | .archive_download_url" | head -n1)
-            if [[ -n "$artifact_url" ]]; then
-              curl -fL -H "Authorization: token $GITHUB_TOKEN" -o "${MANAGER_ARTIFACT}.zip" "$artifact_url"
-              unzip -j "${MANAGER_ARTIFACT}.zip" "*.apk" -d ./AnyKernel3/
-            fi
-          fi
-      
-      - name: 设置刷机包命名后缀
-        id: suffix
-        run: |
-          echo "value=${{ env.ZRAM_ALGO && format('_{0}', env.ZRAM_ALGO) || '' }}${{ github.event.inputs.KPM == 'KPM' && '_KPM' || '' }}${{ github.event.inputs.LSM_BBG == 'true' && '_BBG' || '' }}${{ github.event.inputs.SCHED_HMBIRD== 'true' && '_HMBIRD' || '' }}" >> $GITHUB_OUTPUT
-      
-      - name: 提取并打包ZRAM模块
-        if: startsWith(github.event.inputs.ZRAM, '1/')
-        id: zram_find
-        run: |
-          set -e
-          ZRAM_ZIP="${GITHUB_WORKSPACE}/kernel_workspace/Action-Build/ZRAM.zip"
-          if [ ! -f "$ZRAM_ZIP" ]; then
-            echo "upload=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          unzip "$ZRAM_ZIP" -d ZRAM-Module
-          CONFIG_PROP="ZRAM-Module/config.prop"
-          if [ -f "$CONFIG_PROP" ]; then
-            sed -i "s/^ZRAM_ALGO=.*/ZRAM_ALGO=${ZRAM_ALGO}/" "$CONFIG_PROP"
-            sed -i "s/^ZRAM_SIZE=.*/ZRAM_SIZE=${ZRAM_SIZE}/" "$CONFIG_PROP"
-          fi
-          zram_path=$(find "./kernel_workspace/kernel_platform/common/out" -type f -name "zram.ko" | head -n 1)
-          if [ -n "$zram_path" ] && [ -f "$zram_path" ]; then
-            install -D "$zram_path" "./ZRAM-Module/zram/zram.ko"
+          cd kernel_workspace/common
+          if [ "$KSU_TYPE" = "ReSukiSU" ]; then
+            git clone https://github.com/Resukisu/Resukisu.git --depth=1 ../resukisu
+            cd ../resukisu
+            bash patch.sh apply ../common || true
           else
-            echo "upload=false" >> "$GITHUB_OUTPUT"
-            exit 0
+            curl -LSs https://raw.githubusercontent.com/ShirkNeko/SukiSU-Ultra/main/kernel/setup.sh | bash -s builtin
           fi
-      
-      - name: 上传AnyKernel3刷机包
-        uses: actions/upload-artifact@v7
+
+      - name: 🧩 集成 BBG
+        if: ${{ env.ENABLE_BBG == 'true' }}
+        run: |
+          cd kernel_workspace
+          git clone https://github.com/BoringBoredGroup/BBG-Kernel-Patches.git --depth=1 bbg
+          cd bbg
+          for i in *.patch; do git apply --quiet ../common/$i || true; done
+
+      - name: 🧩 集成 SCX 风驰
+        if: ${{ env.ENABLE_SCX == 'true' }}
+        run: |
+          cd kernel_workspace/common
+          curl -LSs https://raw.githubusercontent.com/007kylee/scx/main/patch.sh | bash || true
+
+      - name: ⏰ 设置内核构建时间
+        run: |
+          cd kernel_workspace/common
+          mkdir -p include/generated
+          cat > include/generated/compile.h << EOF
+#define LINUX_COMPILE_TIME "${{ env.KERNEL_TIME }}"
+#define LINUX_COMPILE_HOST "yastonc"
+EOF
+
+      - name: 🔨 开始编译内核
+        run: |
+          cd kernel_workspace/common
+          export ARCH=arm64
+          export CC=../clang18/bin/clang
+          export CROSS_COMPILE=aarch64-linux-gnu-
+          export LD=../clang18/bin/ld.lld
+          export PATH=../clang18/bin:$PATH
+          make ${{ env.KERNEL_DEFCONFIG }}
+          make -j$(nproc)
+
+      - name: 📦 打包 AnyKernel3
+        run: |
+          cd kernel_workspace
+          git clone https://github.com/osm0sis/AnyKernel3.git --depth=1 ak3
+          cp common/arch/arm64/boot/Image.gz ak3/
+          cd ak3
+          zip -r9 Kernel_${{ env.DEVICES_NAME }}_yastonc.zip *
+
+      - name: 🚀 上传成品
+        uses: actions/upload-artifact@v4
         with:
-          name: AnyKernel3_SukiSUUltra_${{ env.KSUVER }}_SM8750_${{ env.KERNEL_VERSION }}${{ steps.suffix.outputs.value }}
-          path: ./AnyKernel3/*
-      
-      - name: 上传ZRAM模块
-        if: startsWith(github.event.inputs.ZRAM, '1/') && steps.zram_find.outputs.upload != 'false'
-        uses: actions/upload-artifact@v7
-        with:
-          name: ZRAM-Module_${{ env.KERNEL_VERSION }}_SM8750
-          path: ZRAM-Module/*
-      
-      - name: 构建后磁盘空间检查
-        run: df -h
+          name: Kernel_${{ env.DEVICES_NAME }}_yastonc
+          path: kernel_workspace/ak3/Kernel_*.zip
