@@ -12,9 +12,9 @@ jobs:
           sudo apt update
           sudo apt install -y git build-essential clang lld llvm libssl-dev libelf-dev flex bison bc zip curl python3 python3-pip
 
-      - name: 克隆你指定的内核源码
+      - name: 克隆你指定的内核源码（去掉 -b main）
         run: |
-          git clone --depth=1 -b main https://github.com/brokestar233/android_kernel_common_oneplus_sm8750 kernel
+          git clone --depth=1 https://github.com/brokestar233/android_kernel_common_oneplus_sm8750 kernel
 
       # 严格匹配你图中的 Uname 和构建时间
       - name: 设置内核版本信息
@@ -25,35 +25,35 @@ jobs:
           echo "6.6.89" > .kernelrelease
           echo "# SMP PREEMPT Tue Jul 1 19:48:18 UTC 2025" > .buildtime
 
-      # 1. 先打 SUS-FS（最底层，无冲突）
+      # 1. 先打 SUS-FS
       - name: 应用 SUS-FS
         run: |
           cd kernel
           git clone --depth=1 https://github.com/SUS-Space/SUS-FS.git SUS-FS
           python3 SUS-FS/apply.py
 
-      # 2. 再打 ZeroTolerance（安全增强，依赖少）
+      # 2. 再打 ZeroTolerance
       - name: 应用 ZeroTolerance
         run: |
           cd kernel
           git clone --depth=1 https://github.com/Imprvdteam/ZeroTolerance.git ZeroTolerance
           python3 ZeroTolerance/apply.py
 
-      # 3. 再打 BBG（内核增强，需在 Root 前）
+      # 3. 再打 BBG
       - name: 应用 BBG
         run: |
           cd kernel
           git clone --depth=1 https://github.com/imshine/BBG.git BBG
           python3 BBG/apply.py
 
-      # 4. 最后打 ResurrectionSU（Root 功能，最后打避免覆盖）
+      # 4. 最后打 ResurrectionSU
       - name: 应用 ResurrectionSU
         run: |
           cd kernel
           git clone --depth=1 https://github.com/viragsairaj/ResurrectionSU.git ResSU
           python3 ResSU/apply_patch.py
 
-      # 编译内核（保持官方版本号不变）
+      # 编译内核
       - name: 编译内核
         run: |
           cd kernel
