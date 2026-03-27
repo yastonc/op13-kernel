@@ -1,0 +1,58 @@
+name: OnePlus13 • ResUK + BBG + ZeroTolerance
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Install dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y git build-essential clang lld llvm libssl-dev libelf-dev flex bison bc zip curl python3 python3-pip
+
+      - name: Clone OnePlus13 Kernel
+        run: |
+          git clone --depth=1 -b Android14.13.0.1.SV2.OP13 https://github.com/OnePlusOSS/android_kernel_oneplus_sm8750 kernel
+
+      - name: Apply ResurrectionSU
+        run: |
+          cd kernel
+          git clone --depth=1 https://github.com/viragsairaj/ResurrectionSU ResSU
+          python3 ResSU/apply_patch.py
+
+      - name: Apply BBG
+        run: |
+          cd kernel
+          git clone --depth=1 https://github.com/imshine/BBG BBG
+          python3 BBG/apply.py
+
+      - name: Apply ZeroTolerance
+        run: |
+          cd kernel
+          git clone --depth=1 https://github.com/Imprvdteam/ZeroTolerance
+          python3 ZeroTolerance/apply.py
+
+      - name: Build Kernel
+        run: |
+          cd kernel
+          export ARCH=arm64
+          export LLVM=1
+          export CC=clang
+          export CROSS_COMPILE=aarch64-linux-gnu-
+          make vendor/lahaina-qgki_defconfig
+          make -j$(nproc)
+
+      - name: Pack AnyKernel3
+        run: |
+          git clone --depth=1 https://github.com/osm0sis/AnyKernel3 AK3
+          cp kernel/out/arch/arm64/boot/Image.gz AK3/
+          cd AK3
+          zip -r9 OP13-Kernel.zip *
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: OP13-Kernel
+          path: AK3/OP13-Kernel.zip
