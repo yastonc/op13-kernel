@@ -7,45 +7,34 @@ jobs:
   build:
     runs-on: ubuntu-22.04
     steps:
-      - name: Checkout kernel source (yastonc v14)
+      - name: Checkout kernel source
         uses: actions/checkout@v4
         with:
           repository: yastonc/android_kernel_common_oneplus_sm8750
           ref: v14
           fetch-depth: 1
 
-      - name: Install build dependencies
+      - name: Install dependencies
         run: |
           sudo apt update
-          sudo apt install -y bc bison flex build-essential libssl-dev libelf-dev \
-            git zip curl lld llvm gcc-aarch64-linux-gnu python3 python2 patch
+          sudo apt install -y bc bison flex build-essential libssl-dev libelf-dev git zip curl lld llvm gcc-aarch64-linux-gnu python3 python2 patch
 
       - name: Clone Clang toolchain
-        run: |
-          git clone https://github.com/ZyCromerZ/Clang --depth=1 clang
-          echo "$GITHUB_WORKSPACE/clang/bin" >> $GITHUB_PATH
+        run: git clone https://github.com/ZyCromerZ/Clang --depth=1 clang
 
       - name: Apply Resukisu
         run: |
           git clone https://github.com/Resukisu/Resukisu --depth=1 resukisu
           cd resukisu
-          # 修正路径：部分版本Resukisu脚本在scripts目录下
-          if [ -f "patch.sh" ]; then
-            bash patch.sh apply ..
-          elif [ -f "scripts/patch.sh" ]; then
-            bash scripts/patch.sh apply ..
-          else
-            echo "Resukisu patch.sh not found, skipping"
-          fi
+          if [ -f "patch.sh" ]; then bash patch.sh apply .. || true; elif [ -f "scripts/patch.sh" ]; then bash scripts/patch.sh apply .. || true; else echo "Resukisu patch not found"; fi
 
       - name: Apply BBG Tweaks
         run: |
-          # 修正URL格式，去掉换行导致的截断问题
           git clone https://github.com/BoringBoredGroup/BBG-Kernel-Patches --depth=1 bbg
           cd bbg
           for i in *.patch; do git apply --quiet $i || true; done
 
-      - name: Apply 零宽容 (NoFuzz)
+      - name: Apply NoFuzz
         run: |
           git clone https://github.com/byxiaorun/NoFuzz.git --depth=1 nofuzz
           cd nofuzz
@@ -57,30 +46,25 @@ jobs:
           cd susfs
           for i in *.patch; do git apply --quiet $i || true; done
 
-      - name: Build kernel (原生名称+时间)
+      - name: Build kernel
         run: |
           export ARCH=arm64
           export CC=clang
           export CROSS_COMPILE=aarch64-linux-gnu-
           export LD=ld.lld
-          export AR=llvm-ar
-          export NM=llvm-nm
-          export OBJCOPY=llvm-objcopy
-          export OBJDUMP=llvm-objdump
-          export STRIP=llvm-strip
-
+          export PATH=$GITHUB_WORKSPACE/clang/bin:$PATH
           make gki_defconfig || make oneplus_sm8750_defconfig
           make -j$(nproc)
 
       - name: Pack with AnyKernel3
         run: |
           git clone https://github.com/osm0sis/AnyKernel3 --depth=1 ak3
-          cp arch/arm64/boot/Image.gz ak3/
+          cp arch/arm64/boot/Image.gz ak3/ 2>/dev/null || cp arch/arm64/boot/Image ak3/
           cd ak3
-          zip -r9 Kernel_SM8750_yastonc_v14_Resukisu_BBG_Nofuzz_SUSFS.zip *
+          zip -r9 Kernel_SM8750_yastonc_v14_Final.zip *
 
-      - name: Upload final kernel
+      - name: Upload kernel
         uses: actions/upload-artifact@v4
         with:
-          name: Kernel_SM8750_yastonc_v14_Resukisu_BBG_Nofuzz_SUSFS
+          name: Kernel_SM8750_yastonc_v14_Final
           path: ak3/*.zip
