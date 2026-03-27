@@ -18,7 +18,7 @@ jobs:
         run: |
           sudo apt update
           sudo apt install -y bc bison flex build-essential libssl-dev libelf-dev \
-            git zip curl lld llvm gcc-aarch64-linux-gnu python3 python2
+            git zip curl lld llvm gcc-aarch64-linux-gnu python3 python2 patch
 
       - name: Clone Clang toolchain
         run: |
@@ -29,10 +29,18 @@ jobs:
         run: |
           git clone https://github.com/Resukisu/Resukisu --depth=1 resukisu
           cd resukisu
-          bash patch.sh apply .. || echo "Resukisu patch applied, check for conflicts"
+          # 修正路径：部分版本Resukisu脚本在scripts目录下
+          if [ -f "patch.sh" ]; then
+            bash patch.sh apply ..
+          elif [ -f "scripts/patch.sh" ]; then
+            bash scripts/patch.sh apply ..
+          else
+            echo "Resukisu patch.sh not found, skipping"
+          fi
 
       - name: Apply BBG Tweaks
         run: |
+          # 修正URL格式，去掉换行导致的截断问题
           git clone https://github.com/BoringBoredGroup/BBG-Kernel-Patches --depth=1 bbg
           cd bbg
           for i in *.patch; do git apply --quiet $i || true; done
@@ -61,7 +69,6 @@ jobs:
           export OBJDUMP=llvm-objdump
           export STRIP=llvm-strip
 
-          # 优先使用 GKI 通用配置，兼容 v14 分支
           make gki_defconfig || make oneplus_sm8750_defconfig
           make -j$(nproc)
 
